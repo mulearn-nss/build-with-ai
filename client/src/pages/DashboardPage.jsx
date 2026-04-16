@@ -1,16 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Upload, Loader2, Activity, Search, Leaf, ScanLine, Droplets, Scissors, MapPin, FlaskConical, Clock, AlertTriangle, BellRing } from 'lucide-react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Upload, Loader2, Activity, Search, Leaf, ScanLine, Droplets, Scissors, MapPin, FlaskConical, Clock, AlertTriangle, BellRing, Trash2 } from 'lucide-react';
 import { analyzePlantImage } from '../services/api';
+import { db } from '../lib/firebase';
+import { doc, deleteDoc } from 'firebase/firestore';
 
 export default function DashboardPage() {
   const { plantId } = useParams();
   
+  const navigate = useNavigate();
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadingTextIndex, setLoadingTextIndex] = useState(0);
   const [diagnosisResult, setDiagnosisResult] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   
   const [weather, setWeather] = useState(null);
   const [lastSync, setLastSync] = useState(null);
@@ -23,15 +27,23 @@ export default function DashboardPage() {
     "Accessing Sustainable Logic cores..."
   ];
 
-  const plant = {
-    id: plantId,
-    species: 'Heirloom Tomato', // Modified for Tomato Lifecycle demo
-    nickname: 'Project Alpha',
-    location: { lat: 10.63, lng: 76.22 }, 
-    createdAt: '2026-03-01T12:00:00Z',
-    lastFertilizedAt: '2026-04-01T12:00:00Z',
-    lastWateredAt: '2026-04-10T12:00:00Z',
-  };
+  const [plant, setPlant] = useState(() => {
+     const offlineStr = localStorage.getItem('rooted_offline_ledger');
+     if (offlineStr) {
+        const arr = JSON.parse(offlineStr);
+        const match = arr.find(p => p.id === plantId);
+        if (match) return match;
+     }
+     return {
+        id: plantId,
+        species: 'Heirloom Tomato',
+        nickname: 'Project Alpha',
+        location: { lat: 10.63, lng: 76.22 }, 
+        createdAt: '2026-03-01T12:00:00Z',
+        lastFertilizedAt: '2026-04-01T12:00:00Z',
+        lastWateredAt: '2026-04-10T12:00:00Z',
+     };
+  });
 
   const calculateDays = (dateString) => {
     if(!dateString) return 0;
@@ -54,6 +66,8 @@ export default function DashboardPage() {
 
   // Immediate Tomato Medical Initialization logic handling 'Pending Sync'
   const [ledgerEntries, setLedgerEntries] = useState(() => {
+    const cached = localStorage.getItem(`rooted_ledger_${plantId}`);
+    if (cached) return JSON.parse(cached);
     const isTomato = plant.species.toLowerCase().includes('tomato');
     return [
       {
@@ -63,6 +77,10 @@ export default function DashboardPage() {
       }
     ];
   });
+
+  useEffect(() => {
+    localStorage.setItem(`rooted_ledger_${plantId}`, JSON.stringify(ledgerEntries));
+  }, [ledgerEntries, plantId]);
 
   // STALE-WHILE-REVALIDATE OpenWeather Sync Logic
   useEffect(() => {
@@ -224,7 +242,7 @@ export default function DashboardPage() {
             {plant.location ? (
                <div className="flex items-center gap-2 mt-5 bg-white/60 backdrop-blur-sm border border-sage/40 text-forest px-4 py-2.5 rounded-[1rem] text-sm font-extrabold w-fit shadow-md relative">
                   <MapPin className="w-5 h-5 text-forest" />
-                  <span>{weather?.city ? weather.city : `Lat: ${plant.location.lat.toFixed(2)}, Lng: ${plant.location.lng.toFixed(2)}`}</span>
+                  <span>{plant.location.name ? plant.location.name : weather?.city ? weather.city : `Lat: ${plant.location.lat.toFixed(2)}, Lng: ${plant.location.lng.toFixed(2)}`}</span>
                   {lastSync && <span className="ml-2 pl-3 border-l-2 border-forest/20 text-forest/50 font-bold tracking-wide">SYNCED: {lastSync}</span>}
                   
                   {isSyncingWeather && (
@@ -241,6 +259,30 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
+        
+        <button 
+           onClick={async () => {
+              if (!confirmDelete) {
+                 setConfirmDelete(true);
+                 setTimeout(() => setConfirmDelete(false), 3000);
+                 return;
+              }
+              if (db && plantId !== 'p1') {
+                 deleteDoc(doc(db, "plants", plantId)).catch(e => {}); 
+              }
+              const offlineStr = localStorage.getItem('rooted_offline_ledger');
+              if (offlineStr) {
+                 const arr = JSON.parse(offlineStr);
+                 localStorage.setItem('rooted_offline_ledger', JSON.stringify(arr.filter(p => p.id !== plantId)));
+              }
+              localStorage.removeItem(`rooted_ledger_${plantId}`);
+              navigate('/collection');
+           }}
+           className={`border p-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 shadow-sm ${confirmDelete ? 'bg-red-600 text-white border-red-700 animate-pulse' : 'bg-red-500/10 text-red-600 hover:bg-red-500 hover:text-white border-red-500/30'}`}
+        >
+          <Trash2 className="w-5 h-5" /> 
+          <span className="hidden sm:inline">{confirmDelete ? 'Tap again to Confirm' : 'Delete Plant'}</span>
+        </button>
       </div>
 
       <main className="grid grid-cols-1 xl:grid-cols-3 gap-10">

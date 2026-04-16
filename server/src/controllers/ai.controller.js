@@ -1,10 +1,11 @@
-const { GoogleGenerativeAI } = require("@google/genai");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 const fs = require('fs');
 
 exports.analyzeImage = async (req, res) => {
     try {
         const apiKey = process.env.GEMINI_API_KEY;
-        const ai = new GoogleGenerativeAI({ apiKey });
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
         // Retrieve the local micro-climate data sent from the dashboard
         const { temperature, humidity, lat, lng } = req.body;
@@ -45,13 +46,12 @@ exports.analyzeImage = async (req, res) => {
             fs.unlinkSync(req.file.path);
         }
 
-        const response = await ai.models.generateContent({
-             model: 'gemini-1.5-flash',
+        const result = await model.generateContent({
              contents: contents,
-             config: { responseMimeType: "application/json" }
+             generationConfig: { responseMimeType: "application/json" }
         });
 
-        const textResponse = response.text;
+        const textResponse = result.response.text();
         return res.json(JSON.parse(textResponse));
         
     } catch (err) {
