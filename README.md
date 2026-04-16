@@ -1,7 +1,7 @@
-# Project Name
+# ScamSniper AI
 
 ## Problem Statement
-Explain clearly what problem your project is solving.
+With the rise of digital communication, users are increasingly exposed to phishing messages and scam attempts through emails, SMS, and messaging platforms. Many users are unable to identify these threats, leading to financial loss and data breaches. There is a need for an intelligent system that can analyze messages and warn users about potential scams in real time.
 
 ## Project Description
 Describe your solution, how it works, and what makes it useful.
