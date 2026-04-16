@@ -4,6 +4,9 @@ import PlantCard from '../components/plants/PlantCard';
 import { Plus, X, Leaf, Sparkles, MapPin, TrendingUp, Compass } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { collection, addDoc, onSnapshot, query, where } from 'firebase/firestore';
+import { Search } from 'lucide-react';
+
+const WEATHER_API_KEY = "85ccfbe08ab08a26c42dd448fa789d01";
 
 export default function CollectionPage() {
   const { currentUser } = useAuth();
@@ -12,7 +15,18 @@ export default function CollectionPage() {
   
   // High-Performance Location State
   const [loadingLocation, setLoadingLocation] = useState(false);
-  const [plants, setPlants] = useState([]);
+  const [plants, setPlants] = useState(() => {
+     const stored = localStorage.getItem('rooted_offline_ledger');
+     if (stored) return JSON.parse(stored);
+     return [];
+  });
+
+  // NEW LOCATION STATES
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [selectedLocation, setSelectedLocation] = useState(null);
+  const [showDropdown, setShowDropdown] = useState(false);
 
   const feedItems = [
     "USDA Zone 8: Frost expected tonight! Cover sensitive tropicals.",
@@ -23,16 +37,7 @@ export default function CollectionPage() {
 
   useEffect(() => {
     if (!db || !currentUser?.uid) {
-       setPlants([{
-            id: 'p1',
-            species: 'Monstera Deliciosa',
-            nickname: 'Monster',
-            currentHealthScore: 82, 
-            createdAt: '2026-03-01T12:00:00Z',
-            lastFertilizedAt: '2026-04-01T12:00:00Z',
-            lastWateredAt: '2026-04-10T12:00:00Z',
-            location: { lat: 10.63, lng: 76.22 } 
-          }]);
+       // Persist Mock logic
        return;
     }
 
@@ -41,9 +46,12 @@ export default function CollectionPage() {
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const plantData = [];
         snapshot.forEach((doc) => plantData.push({ id: doc.id, ...doc.data() }));
-        if (plantData.length > 0) setPlants(plantData);
+        if (plantData.length > 0) {
+           setPlants(plantData);
+           localStorage.setItem('rooted_offline_ledger', JSON.stringify(plantData));
+        }
       }, (error) => {
-        console.warn("Firestore access blocked. Triggering Mock data mode.");
+        console.warn("Firestore access blocked. Using LocalStorage fallback.");
       });
       return unsubscribe;
     } catch (e) {
@@ -51,7 +59,33 @@ export default function CollectionPage() {
     }
   }, [currentUser]);
 
-  const savePlant = async (lat, lng) => {
+  useEffect(() => {
+    if (searchQuery.trim().length < 2) {
+       setSearchResults([]);
+       setShowDropdown(false);
+       return;
+    }
+    
+    const timeoutId = setTimeout(async () => {
+       setIsSearching(true);
+       try {
+         const res = await fetch(`https://api.openweathermap.org/geo/1.0/direct?q=${searchQuery}&limit=5&appid=${WEATHER_API_KEY}`);
+         if (res.ok) {
+            const data = await res.json();
+            setSearchResults(data);
+            setShowDropdown(true);
+         }
+       } catch (e) {
+         console.warn("Geocoding failed", e);
+       } finally {
+         setIsSearching(false);
+       }
+    }, 500); // Debounce
+    
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
+
+  const savePlant = async (locObj) => {
     const ts = new Date().toISOString();
     const freshPlant = {
       userId: currentUser?.uid || 'dev-123',
@@ -61,18 +95,29 @@ export default function CollectionPage() {
       createdAt: ts,
       lastWateredAt: ts,
       lastFertilizedAt: ts,
-      location: lat ? { lat, lng } : null
+      location: locObj ? { lat: locObj.lat, lng: locObj.lng, name: locObj.name, district: locObj.district } : null
     };
 
     try {
-      if (db) await addDoc(collection(db, "plants"), freshPlant);
-      else setPlants([ { id: Date.now().toString(), ...freshPlant }, ...plants ]);
+      if (db) {
+         await addDoc(collection(db, "plants"), freshPlant);
+         // Rely on onSnapshot for live UI syncing
+      } else {
+         const newArr = [ { id: Date.now().toString(), ...freshPlant }, ...plants ];
+         setPlants(newArr);
+         localStorage.setItem('rooted_offline_ledger', JSON.stringify(newArr));
+      }
     } catch (e) {
-      setPlants([ { id: Date.now().toString(), ...freshPlant }, ...plants ]);
+      const newArr = [ { id: Date.now().toString(), ...freshPlant }, ...plants ];
+      setPlants(newArr);
+      localStorage.setItem('rooted_offline_ledger', JSON.stringify(newArr));
     }
     
     setLoadingLocation(false);
     setNewPlant({ nickname: '', species: '' });
+    setSelectedLocation(null);
+    setSearchQuery('');
+    setSearchResults([]);
     setShowAddForm(false);
   };
 
@@ -81,26 +126,27 @@ export default function CollectionPage() {
     e.preventDefault();
     setLoadingLocation(true);
 
-    const getCoarseGeo = () => new Promise((resolve, reject) => {
-      if (!navigator.geolocation) {
-        return reject(new Error("No geolocation support"));
-      }
-      // Extremely strict 1.5s timeout. If it stalls, instantly abort!
-      navigator.geolocation.getCurrentPosition(resolve, reject, { 
-          enableHighAccuracy: false, 
-          timeout: 1500, 
-          maximumAge: 3600000 
-      });
-    });
+    if (!selectedLocation) {
+       setLoadingLocation(false);
+       return;
+    }
 
     try {
-      const position = await getCoarseGeo();
-      await savePlant(position.coords.latitude, position.coords.longitude);
+      // Immediately trigger a second call to OpenWeather to fetch current Weather to initialize Botanical Ledger
+      const weatherRes = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${selectedLocation.lat}&lon=${selectedLocation.lng}&units=metric&appid=${WEATHER_API_KEY}`);
+      if (weatherRes.ok) {
+         const weatherData = await weatherRes.json();
+         console.log("Initial Ledger Weather Cached:", weatherData);
+      }
+      
+      await savePlant({ lat: selectedLocation.lat, lng: selectedLocation.lng, name: selectedLocation.name });
     } catch (err) {
-      console.warn("Geolocation coarse 1.5s fail. Defaulting seamlessly to Parlikad, Thrissur");
-      await savePlant(10.63, 76.22);
+      console.warn("Save Fallback", err);
+      await savePlant({ lat: 10.63, lng: 76.22, name: 'Thrissur' });
     }
   };
+
+  const isSubmitDisabled = !newPlant.species || loadingLocation || !selectedLocation;
 
   return (
     <div className="p-8 md:p-12 max-w-7xl mx-auto flex flex-col min-h-screen">
@@ -169,11 +215,61 @@ export default function CollectionPage() {
             </div>
             <form onSubmit={handleAddSubmit} className="p-8 space-y-6">
               
-              <div className="bg-sage/10 rounded-2xl p-4 flex gap-3 border border-sage/30 animate-in slide-in-from-top-2">
-                 <Compass className="w-6 h-6 text-forest shrink-0" />
+              <div className="bg-sage/10 border border-sage/30 rounded-2xl p-4 flex gap-3 animate-in slide-in-from-top-2">
+                 <Compass className="w-5 h-5 text-forest shrink-0 mt-0.5" />
                  <p className="text-sm font-bold text-forest/70">
-                   Instant Geolocation Sync enabled. Coordinates will resolve natively or fallback to test cluster within 1.5 seconds to preserve UX flow.
+                   Search your City or District using the OpenWeather Global Engine to securely initialize your Botanical Ledger.
                  </p>
+              </div>
+
+              <div className="relative z-[100]">
+                <label className="block text-sm font-bold text-forest mb-2">Location Search (Box 1)</label>
+                <div className="relative">
+                   <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                      <Search className={`h-5 w-5 ${isSearching ? 'text-sage animate-spin' : 'text-forest/40'}`} />
+                   </div>
+                   <input 
+                     type="text" 
+                     placeholder="e.g. Wadakkanchery" 
+                     value={searchQuery} 
+                     onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                        setSelectedLocation(null); 
+                     }} 
+                     className="w-full pl-11 pr-5 py-4 bg-white/70 backdrop-blur-md border border-white focus:bg-white rounded-2xl h-14 focus:ring-4 outline-none transition-all placeholder:text-forest/30 font-bold text-forest shadow-sm"
+                   />
+                </div>
+                
+                {/* Geocoding Results Dropdown (Box 2) */}
+                {showDropdown && searchResults.length > 0 && (
+                  <ul className="absolute top-full left-0 w-full mt-2 bg-white/90 backdrop-blur-xl border border-white/50 rounded-2xl shadow-2xl max-h-60 overflow-y-auto py-2 overflow-hidden z-[100]">
+                    {searchResults.map((loc, idx) => (
+                      <li 
+                        key={idx}
+                        onClick={() => {
+                           setSelectedLocation({ lat: loc.lat, lng: loc.lon, name: loc.name });
+                           setSearchQuery(`${loc.name}${loc.state ? `, ${loc.state}` : ''}`);
+                           setShowDropdown(false);
+                        }}
+                        className="px-5 py-3 hover:bg-forest/10 cursor-pointer transition-colors text-forest font-bold flex flex-col"
+                      >
+                         <span>{loc.name}</span>
+                         <span className="text-xs text-forest/50">{loc.state || ''} {loc.country ? `(${loc.country})` : ''}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {showDropdown && searchResults.length === 0 && !isSearching && (
+                  <ul className="absolute top-full left-0 w-full mt-2 bg-white/90 backdrop-blur-xl border border-white/50 rounded-2xl shadow-lg z-[100] py-3">
+                     <li className="px-5 py-2 text-forest/50 font-bold text-sm">No exact match configured on OpenWeather. Try a slightly broader city (e.g. Thrissur).</li>
+                  </ul>
+                )}
+
+                {selectedLocation && (
+                  <p className="text-xs font-bold text-sage mt-3 flex items-center gap-1 bg-sage/10 p-2 rounded-xl border border-sage/20 w-fit">
+                     <Sparkles className="w-3 h-3" /> Ledger Lat/Lng locked to {selectedLocation.name}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -188,8 +284,8 @@ export default function CollectionPage() {
               <div className="pt-6 w-full relative">
                 <button 
                    type="submit" 
-                   disabled={loadingLocation} 
-                   className={`w-full py-4 rounded-2xl font-extrabold text-cream flex justify-center items-center shadow-xl transition-all ${loadingLocation ? 'bg-forest/60 blur-[1px]' : 'bg-forest hover:bg-forest/90 hover:scale-[1.02]'}`}
+                   disabled={isSubmitDisabled} 
+                   className={`w-full py-4 rounded-2xl font-extrabold text-cream flex justify-center items-center shadow-xl transition-all ${isSubmitDisabled ? 'bg-forest/60 blur-[1px]' : 'bg-forest hover:bg-forest/90 hover:scale-[1.02]'}`}
                 >
                    {loadingLocation ? 'Initializing Ledger Document...' : 'Create Medical Record'}
                 </button>

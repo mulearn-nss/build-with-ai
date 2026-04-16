@@ -1,8 +1,9 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
-import { ScanLine, Droplets } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ScanLine, Droplets, MapPin, Clock } from 'lucide-react';
 
 export default function PlantCard({ plant }) {
+  const navigate = useNavigate();
   const score = plant.currentHealthScore || 0;
   
   const getHealthColor = (s) => {
@@ -16,8 +17,18 @@ export default function PlantCard({ plant }) {
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (score / 100) * circumference;
 
+  const calculateDays = (dateStr) => {
+    if (!dateStr) return '?';
+    const diff = new Date() - new Date(dateStr);
+    return Math.floor(diff / (1000 * 60 * 60 * 24));
+  };
+  const waterDays = calculateDays(plant.lastWateredAt);
+
   return (
-    <div className="glass-card rounded-[2rem] p-7 group hover:-translate-y-2 relative overflow-hidden flex flex-col justify-between h-full min-h-[220px]">
+    <div 
+      onClick={() => navigate(`/dashboard/${plant.id}`)}
+      className="glass-card rounded-[2rem] p-7 group hover:-translate-y-2 relative overflow-hidden flex flex-col justify-between h-full min-h-[220px] cursor-pointer border border-white/40 shadow-sm hover:shadow-2xl hover:border-sage/50 transition-all duration-500 bg-gradient-to-br from-white/80 to-white/30"
+    >
       
       {/* Decorative Blur blob */}
       <div className="absolute -right-8 -top-8 w-32 h-32 bg-sage/30 rounded-full blur-3xl group-hover:bg-sage/50 transition-all duration-700 pointer-events-none" />
@@ -25,7 +36,14 @@ export default function PlantCard({ plant }) {
       <div className="relative z-10 flex justify-between items-start">
         <div>
           <h3 className="text-2xl font-extrabold text-forest tracking-tight">{plant.nickname || plant.species}</h3>
-          <p className="text-sm text-forest/50 mt-1.5 font-bold tracking-wide">{plant.species}</p>
+          <p className="text-sm text-forest/60 mt-1 font-bold tracking-wide">
+             {plant.species}
+          </p>
+          {plant.location?.name && (
+            <p className="text-xs text-forest/40 mt-2.5 font-bold flex items-center gap-1 bg-forest/5 w-fit px-2.5 py-1 rounded-md border border-forest/5">
+               <MapPin className="w-3 h-3" /> {plant.location.name}
+            </p>
+          )}
         </div>
         
         {/* Radial Progress Indicator */}
@@ -43,15 +61,21 @@ export default function PlantCard({ plant }) {
         </div>
       </div>
 
-      <div className="relative z-10 mt-10 flex flex-wrap gap-3">
-        <Link 
-          to={`/dashboard/${plant.id}`} 
-          className="flex-1 bg-forest text-cream font-bold py-3.5 px-4 rounded-xl hover:bg-forest/90 transition shadow-lg shadow-forest/20 flex justify-center items-center gap-2 text-sm scale-95 group-hover:scale-100 duration-300"
+      <div className="relative z-10 mt-8 flex flex-col gap-2.5">
+         {waterDays !== '?' && (
+           <div className="flex items-center gap-1.5 text-[11px] font-extrabold text-forest/40 ml-1 uppercase tracking-wider">
+             <Clock className="w-3.5 h-3.5" /> 
+             {waterDays === 0 ? 'Hydrated Today' : `${waterDays}d Since Hydration`}
+           </div>
+         )}
+        <button 
+           onClick={(e) => { 
+             e.stopPropagation(); 
+             // Logic to trigger quick-water Action can be hooked here easily 
+           }}
+           className="w-full bg-forest/5 text-forest font-bold py-3.5 px-4 rounded-xl hover:bg-forest hover:text-cream transition-all border border-forest/10 backdrop-blur-sm flex justify-center items-center gap-2 text-sm scale-[0.98] group-hover:scale-100 duration-300 shadow-sm"
         >
-          <ScanLine className="w-4 h-4" /> Scan
-        </Link>
-        <button className="flex-1 bg-white/60 text-forest font-bold py-3.5 px-4 rounded-xl hover:bg-white transition border border-white/50 backdrop-blur-sm flex justify-center items-center gap-2 text-sm scale-95 group-hover:scale-100 duration-300">
-          <Droplets className="w-4 h-4 text-sage" /> Water
+          <Droplets className="w-4 h-4" /> Quick Hydrate
         </button>
       </div>
     </div>
