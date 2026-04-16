@@ -14,6 +14,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(false);
   const [loadingTextIndex, setLoadingTextIndex] = useState(0);
   const [diagnosisResult, setDiagnosisResult] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   
   const [weather, setWeather] = useState(null);
   const [lastSync, setLastSync] = useState(null);
@@ -261,23 +262,26 @@ export default function DashboardPage() {
         
         <button 
            onClick={async () => {
-              if (window.confirm('Are you sure you want to permanently delete this Botanical Profile?')) {
-                 if (db && plantId !== 'p1') {
-                    try { await deleteDoc(doc(db, "plants", plantId)); } catch (e) { }
-                 }
-                 const offlineStr = localStorage.getItem('rooted_offline_ledger');
-                 if (offlineStr) {
-                    const arr = JSON.parse(offlineStr);
-                    localStorage.setItem('rooted_offline_ledger', JSON.stringify(arr.filter(p => p.id !== plantId)));
-                 }
-                 localStorage.removeItem(`rooted_ledger_${plantId}`);
-                 navigate('/collection');
+              if (!confirmDelete) {
+                 setConfirmDelete(true);
+                 setTimeout(() => setConfirmDelete(false), 3000);
+                 return;
               }
+              if (db && plantId !== 'p1') {
+                 deleteDoc(doc(db, "plants", plantId)).catch(e => {}); 
+              }
+              const offlineStr = localStorage.getItem('rooted_offline_ledger');
+              if (offlineStr) {
+                 const arr = JSON.parse(offlineStr);
+                 localStorage.setItem('rooted_offline_ledger', JSON.stringify(arr.filter(p => p.id !== plantId)));
+              }
+              localStorage.removeItem(`rooted_ledger_${plantId}`);
+              navigate('/collection');
            }}
-           className="bg-red-500/10 text-red-600 hover:bg-red-500 hover:text-white border border-red-500/30 p-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 shadow-sm"
+           className={`border p-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 shadow-sm ${confirmDelete ? 'bg-red-600 text-white border-red-700 animate-pulse' : 'bg-red-500/10 text-red-600 hover:bg-red-500 hover:text-white border-red-500/30'}`}
         >
           <Trash2 className="w-5 h-5" /> 
-          <span className="hidden sm:inline">Delete Plant</span>
+          <span className="hidden sm:inline">{confirmDelete ? 'Tap again to Confirm' : 'Delete Plant'}</span>
         </button>
       </div>
 
