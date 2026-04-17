@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+@plugin "tailwindcss-animate";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --font-sans: "Inter", "Geist", sans-serif;
+  
+  --color-forest: #1B4332;
+  --color-sage: #95D5B2;
+  --color-cream: #F8F9FA;
+  
+  --animate-scan: scan 3s ease-in-out infinite;
+
+  @keyframes scan {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(100%); }
+  }
+}
+
+@layer base {
+  body {
+    @apply bg-cream text-forest font-sans antialiased;
+    background-image: radial-gradient(circle at top right, rgba(149, 213, 178, 0.15), transparent 40%),
+                      radial-gradient(circle at bottom left, rgba(27, 67, 50, 0.05), transparent 40%);
+    background-attachment: fixed;
+    min-height: 100vh;
+  }
+}
+
+@layer utilities {
+  .glass-card {
+    @apply bg-white/70 backdrop-blur-md border border-white/40 shadow-sm hover:shadow-lg transition-all duration-300;
+  }
+  
+  .glass-nav {
+    @apply bg-white/80 backdrop-blur-xl border-white/20 shadow-[0_4px_30px_rgba(0,0,0,0.05)];
+  }
+}
